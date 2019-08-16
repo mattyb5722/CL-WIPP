@@ -3,181 +3,117 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Mapbox.Unity.Map;
+using UnityEngine.UI;
 
 public class CameraMovement : MonoBehaviour {
 
+    public static CameraMovement instance = null;
+
     public GameObject map;
     private AbstractMap mapVariable;
+
     public GameObject focalPoint;
+    public GameObject frontCamera;
+    public GameObject panoCamera;
 
-    // Movement 1
-    [Range(1.0f, 5.0f)]
-    public float zoomRate;
-    private float zoomRateScalingFactor = 250;
+    public Canvas fog;
+    public GameObject boarder;
 
-    [Range(1.0f, 5.0f)]
-    public float scrollRate;
-    private float scrollRateScalingFactor = 10000;
-
-    public float maxZoom;
-    public float minZoom;
-    private Mapbox.Utils.Vector2d originalLatitudeLongitude = new Mapbox.Utils.Vector2d(32.371666666667, -103.79361111111);
-
-    // Movement 2
-    [Range(1.0f, 5.0f)]
-    public float rotateRate;
-    private float rotateRateScalingFactor = 25;
-
-    // Movement 3
-    private float originalCameraHeight;
-    //[Range(1.0f, 5.0f)]
-    //public float rotateRate;
-    //private float rotateRateScalingFactor = 25;
-
-
-
-    private int movement = 1;
-
-    // -30
+    private Mapbox.Utils.Vector2d originalLatitudeLongitude;
+    
+    private int phase = 1;
 
     private void Start () {
+        if (instance == null) { instance = this;
+        } else { Destroy(gameObject); }
         mapVariable = map.GetComponent<AbstractMap>();
-        originalCameraHeight = focalPoint.transform.position.y;
+        originalLatitudeLongitude = mapVariable.CenterLatitudeLongitude;
+        // originalCameraHeight = focalPoint.transform.position.y;
+        StartCoroutine(Transition());
     }
 
     private void FixedUpdate() {
-        if (movement == 1) {
-            Movement1();
-        } else if (movement == 2) {
-            Movement2();
-        } else if (movement == 3) {
-            Movement3();
-        }
-        Transition();
-    }
-
-
-    private void Movement1() {
-        float currentZoom = mapVariable.Zoom;
-        float zoomDifference = 1 + (15 - currentZoom);
-        Mapbox.Utils.Vector2d latitudeLongitude = mapVariable.CenterLatitudeLongitude;
-        if (Input.GetKey(KeyCode.E)) {
-            currentZoom += zoomRate / zoomRateScalingFactor;
-            UpdateMap(currentZoom);
-        }
-        if (Input.GetKey(KeyCode.Q)) {
-            currentZoom -= zoomRate / zoomRateScalingFactor;
-            UpdateMap(currentZoom);
-        }
-        if (Input.GetKey(KeyCode.W)) {
-            latitudeLongitude.x += scrollRate / scrollRateScalingFactor * Mathf.Pow(zoomDifference, 3);
-            UpdateMap(latitudeLongitude);
-        }
-        if (Input.GetKey(KeyCode.S)) {
-            latitudeLongitude.x -= scrollRate / scrollRateScalingFactor * Mathf.Pow(zoomDifference, 3);
-            UpdateMap(latitudeLongitude);
-        }
-        if (Input.GetKey(KeyCode.A)) {
-            latitudeLongitude.y -= scrollRate / scrollRateScalingFactor * Mathf.Pow(zoomDifference, 3);
-            UpdateMap(latitudeLongitude);
-        }
-        if (Input.GetKey(KeyCode.D)) {
-            latitudeLongitude.y += scrollRate / scrollRateScalingFactor * Mathf.Pow(zoomDifference, 3);
-            UpdateMap(latitudeLongitude);
-        }
-        if (Input.GetKey(KeyCode.Space)) {
-            latitudeLongitude = originalLatitudeLongitude;
-            UpdateMap(latitudeLongitude);
+        if (phase == 1) {
+            Phase1.instance.Movement(mapVariable, originalLatitudeLongitude);
+        } else if (phase == 2) {
+            Phase2.instance.Movement(focalPoint);
+        } else if (phase == 3) {
+            Phase3.instance.Movement();
+        } else if (phase == 4) {
+            Phase4.instance.Movement(focalPoint, Phase2.instance.rotateRate);
         }
     }
 
-    private void Movement2() {
-        
-        if (Input.GetKey(KeyCode.E)) {
-            float temp = -1 * rotateRate / rotateRateScalingFactor;
-            focalPoint.transform.Rotate(temp, 0f, 0f);
-            float temp2 = focalPoint.transform.position.z + (temp/2);
-            focalPoint.transform.position = new Vector3(focalPoint.transform.position.x, focalPoint.transform.position.y, temp2);
-        }
-        if (Input.GetKey(KeyCode.Q)) {
-            float temp = rotateRate / rotateRateScalingFactor;
-            focalPoint.transform.Rotate(temp, 0f, 0f);
-            float temp2 = focalPoint.transform.position.z + (temp / 2);
-            focalPoint.transform.position = new Vector3(focalPoint.transform.position.x, focalPoint.transform.position.y, temp2);
-        }
-        if (Input.GetKey(KeyCode.W)) {
-            
-        }
-        if (Input.GetKey(KeyCode.S)) {
-            
-        }
-        if (Input.GetKey(KeyCode.A)) {
-            
-        }
-        if (Input.GetKey(KeyCode.D)) {
-            
+    private IEnumerator Transition() {
+        while (true) {
+            if (phase == 1) {     
+                if (mapVariable.Zoom >= Phase1.instance.getMaxZoom()) {                 
+                    mapVariable.SetExtent(MapExtentType.RangeAroundCenter);
+                    fog.GetComponent<ImageFade>().FadeImage();
+                    yield return new WaitForSeconds(1);
+                    frontCamera.gameObject.SetActive(!frontCamera.gameObject.activeSelf);
+                    panoCamera.gameObject.SetActive(!panoCamera.gameObject.activeSelf);
+                    fog.GetComponent<ImageFade>().FadeImage();
+                    yield return new WaitForSeconds(1);
+                    boarder.GetComponent<Animator>().SetTrigger("FadeIn");
+                    phase = 2;
+                }
+            } else if (phase == 2) {
+                // 90 degree:   -0.7071068
+                // 80 degree:   -0.6427876
+                // 70 degree:   -0.5735764
+                // 60 degree:   -0.5
+                if (focalPoint.transform.rotation.x <= -0.5) {
+                    Phase3.instance.UI.gameObject.SetActive(!Phase3.instance.UI.gameObject.activeSelf);
+                    Phase3.instance.berm.SetActive(!Phase3.instance.berm.activeSelf);
+                    Phase3.instance.testbed.SetActive(!Phase3.instance.testbed.activeSelf);
+                    Phase3.instance.thorns.SetActive(!Phase3.instance.thorns.activeSelf);
+
+                    phase = 3;
+                }
+            } else if (phase == 3) {
+                if (Phase3.instance.next == true) {
+                    Phase3.instance.UI.gameObject.SetActive(!Phase3.instance.UI.gameObject.activeSelf);
+                    Phase3.instance.berm.SetActive(!Phase3.instance.berm.activeSelf);
+                    Phase3.instance.testbed.SetActive(!Phase3.instance.testbed.activeSelf);
+                    Phase3.instance.thorns.SetActive(!Phase3.instance.thorns.activeSelf);
+
+
+                    foreach (Transform child in map.transform) {
+                        //child is your child transform
+                        if (child.name == "15/6935/13268" || child.name == "15/6936/13268" || child.name == "15/6937/13268") {
+                            child.gameObject.SetActive(false);
+                        }
+                    }
+                    
+
+
+
+
+
+
+                    phase = 4;
+                }
+            }
+            yield return null;
         }
     }
 
-    private void Movement3() {
-
-        if (Input.GetKey(KeyCode.E)) {
-            float temp = focalPoint.transform.position.y - .1f;
-            focalPoint.transform.position = new Vector3(focalPoint.transform.position.x, temp, focalPoint.transform.position.z);
-        }
-        if (Input.GetKey(KeyCode.Q)) {
-            float temp = focalPoint.transform.position.y + .1f;
-            focalPoint.transform.position = new Vector3(focalPoint.transform.position.x, temp, focalPoint.transform.position.z);
-        }
-        if (Input.GetKey(KeyCode.W)) {
-
-        }
-        if (Input.GetKey(KeyCode.S)) {
-
-        }
-        if (Input.GetKey(KeyCode.A)) {
-
-        }
-        if (Input.GetKey(KeyCode.D)) {
-
-        }
-    }
-
-    private void UpdateMap(Mapbox.Utils.Vector2d latitudeLongitude) {
+    public void UpdateMap(Mapbox.Utils.Vector2d latitudeLongitude) {
         mapVariable.SetCenterLatitudeLongitude(latitudeLongitude);
         mapVariable.UpdateMap();
     }
 
-    private void UpdateMap(float currentZoom) {
-        currentZoom = Mathf.Clamp(currentZoom, minZoom, maxZoom);
+    public void UpdateMap(float currentZoom) {
+        currentZoom = Mathf.Clamp(currentZoom, Phase1.instance.getMinZoom(), Phase1.instance.getMaxZoom());
         mapVariable.SetZoom(currentZoom);
         mapVariable.UpdateMap();
     }
 
-    private void UpdateMap(float currentZoom, Mapbox.Utils.Vector2d latitudeLongitude) {
-        currentZoom = Mathf.Clamp(currentZoom, minZoom, maxZoom);
+    public void UpdateMap(float currentZoom, Mapbox.Utils.Vector2d latitudeLongitude) {
+        currentZoom = Mathf.Clamp(currentZoom, Phase1.instance.getMinZoom(), Phase1.instance.getMaxZoom());
         mapVariable.SetZoom(currentZoom);
         mapVariable.SetCenterLatitudeLongitude(latitudeLongitude);
         mapVariable.UpdateMap();
-    }
-
-    private void Transition() {
-        if (movement == 1) {
-            if (mapVariable.Zoom >= maxZoom) {
-                mapVariable.SetExtent(MapExtentType.RangeAroundCenter);
-                movement = 2;
-            }
-        } else if (movement == 2) {
-            if (focalPoint.transform.rotation.x >= 0) {
-                movement = 1;
-                mapVariable.SetExtent(MapExtentType.CameraBounds);
-            } else if (focalPoint.transform.rotation.x <= -0.7071068) {
-                movement = 3;
-            }
-        } else if (movement == 3) {
-            if (originalCameraHeight <= focalPoint.transform.position.y) {
-                movement = 2;
-            }
-        }
     }
 }
